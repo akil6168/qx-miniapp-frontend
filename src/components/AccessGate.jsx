@@ -3,6 +3,7 @@ import { getInitData, getTelegramUser } from "../telegram";
 
 export default function AccessGate({ children, apiBaseUrl }) {
   const [status, setStatus] = useState("checking");
+  const [debugMsg, setDebugMsg] = useState("");
 
   useEffect(() => {
     async function checkAccess() {
@@ -10,6 +11,7 @@ export default function AccessGate({ children, apiBaseUrl }) {
       const user = getTelegramUser();
 
       if (!initData || !user) {
+        setDebugMsg("initData বা user পাওয়া যায়নি (Telegram SDK issue)");
         setStatus("error");
         return;
       }
@@ -22,6 +24,7 @@ export default function AccessGate({ children, apiBaseUrl }) {
         });
 
         if (!res.ok) {
+          setDebugMsg(`Server status: ${res.status}`);
           setStatus("denied");
           return;
         }
@@ -29,6 +32,7 @@ export default function AccessGate({ children, apiBaseUrl }) {
         const data = await res.json();
         setStatus(data.verified ? "approved" : "denied");
       } catch (err) {
+        setDebugMsg(`Fetch error: ${err.message} | URL: ${apiBaseUrl}/miniapp/verify`);
         console.error("Verification check failed:", err);
         setStatus("error");
       }
@@ -54,6 +58,7 @@ export default function AccessGate({ children, apiBaseUrl }) {
           This feature is for verified members only. Please verify your
           account in the bot first.
         </p>
+        <p style={{ ...styles.text, color: "#ff6b6b", marginTop: 12 }}>{debugMsg}</p>
       </div>
     );
   }
@@ -65,6 +70,7 @@ export default function AccessGate({ children, apiBaseUrl }) {
         <p style={styles.text}>
           Please open this app from inside Telegram.
         </p>
+        <p style={{ ...styles.text, color: "#ff6b6b", marginTop: 12 }}>{debugMsg}</p>
       </div>
     );
   }
