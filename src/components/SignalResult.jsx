@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { getInitData } from "../telegram";
 
-const REASON_LABELS = {
-  TIMEFRAME_MISMATCH: "১ মিনিট ও ৫ মিনিট টাইমফ্রেম ভিন্ন দিক দেখাচ্ছে — মার্কেট এখন অস্থির",
-  SIDEWAYS_MARKET: "মার্কেট এখন সাইডওয়ে (দুর্বল ট্রেন্ড) — ট্রেড করার মতো সেটআপ নেই",
-  LOW_AGREEMENT: "ইন্ডিকেটরগুলোর মধ্যে যথেষ্ট মিল নেই — নিরাপদ সিগন্যাল নেই",
-  NETWORK_ERROR: "সার্ভারে সংযোগ করা যায়নি, আবার চেষ্টা করুন",
-};
+const SCAN_MESSAGES = [
+  "🧠 𝗗𝗘𝗘𝗣 𝗠𝗔𝗥𝗞𝗘𝗧 𝗔𝗡𝗔𝗟𝗬𝗦𝗜𝗦...",
+  "📊 𝗔𝗻𝗮𝗹𝘆𝘇𝗶𝗻𝗴 𝗣𝗿𝗶𝗰𝗲 𝗔𝗰𝘁𝗶𝗼𝗻...",
+  "📈 𝗖𝗵𝗲𝗰𝗸𝗶𝗻𝗴 𝗧𝗿𝗲𝗻𝗱 & 𝗠𝗼𝗺𝗲𝗻𝘁𝘂𝗺...",
+  "🔍 𝗘𝘃𝗮𝗹𝘂𝗮𝘁𝗶𝗻𝗴 𝗠𝗼𝗺𝗲𝗻𝘁𝘂𝗺 𝗜𝗻𝗱𝗶𝗰𝗮𝘁𝗼𝗿𝘀...",
+  "🌊 𝗦𝗰𝗮𝗻𝗻𝗶𝗻𝗴 𝗩𝗼𝗹𝗮𝘁𝗶𝗹𝗶𝘁𝘆 𝗣𝗮𝘁𝘁𝗲𝗿𝗻𝘀...",
+  "🎯 𝗖𝗿𝗼𝘀𝘀-𝗩𝗲𝗿𝗶𝗳𝘆𝗶𝗻𝗴 𝗠𝘂𝗹𝘁𝗶-𝗧𝗶𝗺𝗲𝗳𝗿𝗮𝗺𝗲 𝗗𝗮𝘁𝗮...",
+  "⚖️ 𝗖𝗮𝗹𝗰𝘂𝗹𝗮𝘁𝗶𝗻𝗴 𝗣𝗿𝗼𝗯𝗮𝗯𝗶𝗹𝗶𝘁𝘆 𝗦𝗰𝗼𝗿𝗲...",
+];
 
 const SAMPLE_INTERVAL_MS = 15000;
-const RESULT_POLL_MS = 4000;
-const AUTO_HIDE_MS = 10000;
+const SCAN_MESSAGE_ROTATE_MS = 1800;
+const AUTO_HIDE_MS = 8000;
 
 function fmtBDTime(epochMs) {
   const d = new Date(epochMs + 6 * 60 * 60 * 1000);
@@ -32,21 +35,6 @@ async function fetchSample(apiBaseUrl, pair) {
   }
 }
 
-async function fetchResult(apiBaseUrl, symbol, direction, entryEpochMs) {
-  try {
-    const initData = getInitData();
-    const res = await fetch(`${apiBaseUrl}/miniapp/result`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ initData, symbol, direction, entryEpochMs }),
-    });
-    return await res.json();
-  } catch (err) {
-    console.error("Result fetch failed:", err);
-    return { status: "pending" };
-  }
-}
-
 function finalizeSamples(samples) {
   const signalSamples = samples.filter((s) => s.signal);
   if (signalSamples.length === 0) {
@@ -63,36 +51,34 @@ function finalizeSamples(samples) {
     confidencePct: avgConfidence,
     symbol: latestMatching.symbol,
     detail: latestMatching.detail,
-    sampleCount: samples.length,
-    agreeCount: majority.length,
   };
 }
 
 export default function SignalResult({ apiBaseUrl, pair, entryEpoch, revealEpoch, onDone }) {
   const [now, setNow] = useState(Date.now());
   const [finalResult, setFinalResult] = useState(null);
-  const [sampleCount, setSampleCount] = useState(0);
-  const [round1Result, setRound1Result] = useState(null); // null | WIN | LOSS
-  const [round2Result, setRound2Result] = useState(null);
-  const [activeRound, setActiveRound] = useState(1);
+  const [scanMsgIndex, setScanMsgIndex] = useState(0);
 
   const samplesRef = useRef([]);
   const pollTimerRef = useRef(null);
   const finalizedRef = useRef(false);
-  const round1CheckStartedRef = useRef(false);
-  const round2CheckStartedRef = useRef(false);
   const hideTimerStartedRef = useRef(false);
-
   const closeEpoch = entryEpoch + 60000;
-  const round2Entry = closeEpoch;
-  const round2Close = closeEpoch + 60000;
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // প্রাথমিক বিশ্লেষণ — reveal পর্যন্ত বারবার sample নেওয়া
+  // স্ক্যানিং মেসেজ ঘুরিয়ে দেখানো
+  useEffect(() => {
+    const t = setInterval(() => {
+      setScanMsgIndex((i) => (i + 1) % SCAN_MESSAGES.length);
+    }, SCAN_MESSAGE_ROTATE_MS);
+    return () => clearInterval(t);
+  }, []);
+
+  // reveal পর্যন্ত বারবার sample নেওয়া
   useEffect(() => {
     let cancelled = false;
     async function pollLoop() {
@@ -100,7 +86,6 @@ export default function SignalResult({ apiBaseUrl, pair, entryEpoch, revealEpoch
       const sample = await fetchSample(apiBaseUrl, pair);
       if (cancelled) return;
       samplesRef.current.push(sample);
-      setSampleCount(samplesRef.current.length);
       pollTimerRef.current = setTimeout(pollLoop, SAMPLE_INTERVAL_MS);
     }
     pollLoop();
@@ -121,159 +106,103 @@ export default function SignalResult({ apiBaseUrl, pair, entryEpoch, revealEpoch
     })();
   }, [now, revealEpoch, apiBaseUrl, pair]);
 
-  // রাউন্ড ১ ফলাফল চেক (ক্লোজ টাইম পার হওয়ার পর)
+  // ক্লোজ টাইম পার হওয়ার পর কার্ড বন্ধ (সিগন্যাল থাকলে), বা no-signal এর কিছুক্ষণ পর বন্ধ
   useEffect(() => {
-    if (!finalResult?.signal) return;
-    if (now < closeEpoch) return;
-    if (round1CheckStartedRef.current) return;
-    round1CheckStartedRef.current = true;
-
-    let cancelled = false;
-    async function poll() {
-      if (cancelled) return;
-      const res = await fetchResult(apiBaseUrl, pair, finalResult.direction, entryEpoch);
-      if (cancelled) return;
-      if (res.status === "done") {
-        setRound1Result(res.result);
-        if (res.result === "LOSS") setActiveRound(2);
-      } else {
-        setTimeout(poll, RESULT_POLL_MS);
-      }
+    if (hideTimerStartedRef.current) return;
+    if (finalResult?.signal && now >= closeEpoch) {
+      hideTimerStartedRef.current = true;
+      const t = setTimeout(onDone, 3000);
+      return () => clearTimeout(t);
     }
-    poll();
-    return () => { cancelled = true; };
-  }, [finalResult, now, closeEpoch, apiBaseUrl, pair, entryEpoch]);
-
-  // রাউন্ড ২ (MTG) ফলাফল চেক
-  useEffect(() => {
-    if (round1Result !== "LOSS") return;
-    if (now < round2Close) return;
-    if (round2CheckStartedRef.current) return;
-    round2CheckStartedRef.current = true;
-
-    let cancelled = false;
-    async function poll() {
-      if (cancelled) return;
-      const res = await fetchResult(apiBaseUrl, pair, finalResult.direction, round2Entry);
-      if (cancelled) return;
-      if (res.status === "done") {
-        setRound2Result(res.result);
-      } else {
-        setTimeout(poll, RESULT_POLL_MS);
-      }
-    }
-    poll();
-    return () => { cancelled = true; };
-  }, [round1Result, now, round2Close, apiBaseUrl, pair, finalResult, round2Entry]);
-
-  // চূড়ান্ত ফলাফল পাওয়ার ১০ সেকেন্ড পর কার্ড বন্ধ
-  const isGameOver = round1Result === "WIN" || round2Result === "WIN" || round2Result === "LOSS";
-  useEffect(() => {
-    if (!isGameOver || hideTimerStartedRef.current) return;
-    hideTimerStartedRef.current = true;
-    const t = setTimeout(onDone, AUTO_HIDE_MS);
-    return () => clearTimeout(t);
-  }, [isGameOver, onDone]);
-
-  // no-signal কেস — আগের মতোই কিছুক্ষণ পর বন্ধ
-  useEffect(() => {
-    if (finalResult && !finalResult.signal && !hideTimerStartedRef.current) {
+    if (finalResult && !finalResult.signal) {
       hideTimerStartedRef.current = true;
       const t = setTimeout(onDone, AUTO_HIDE_MS);
       return () => clearTimeout(t);
     }
-  }, [finalResult, onDone]);
+  }, [finalResult, now, closeEpoch, onDone]);
 
   let phase;
-  if (now < revealEpoch) phase = "waiting";
-  else if (!finalResult) phase = "revealing";
+  if (now < revealEpoch) phase = "scanning";
+  else if (!finalResult) phase = "finalizing";
+  else if (!finalResult.signal) phase = "no-setup";
   else if (now < entryEpoch) phase = "entry-pending";
-  else if (round1Result === null) phase = "round1-active-or-checking";
-  else if (round1Result === "WIN") phase = "final-win";
-  else if (round2Result === null) phase = "round2-active-or-checking";
-  else phase = "final";
+  else if (now < closeEpoch) phase = "active";
+  else phase = "done";
 
   const secondsUntilReveal = Math.max(0, Math.ceil((revealEpoch - now) / 1000));
   const secondsUntilEntry = Math.max(0, Math.ceil((entryEpoch - now) / 1000));
-  const secondsUntilR1Close = Math.max(0, Math.ceil((closeEpoch - now) / 1000));
-  const secondsUntilR2Close = Math.max(0, Math.ceil((round2Close - now) / 1000));
+  const secondsUntilClose = Math.max(0, Math.ceil((closeEpoch - now) / 1000));
 
   return (
     <div style={styles.card}>
+      <div style={styles.glowBar} />
+
       <div style={styles.headerRow}>
         <span style={styles.symbol}>{pair}</span>
         {finalResult?.signal && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-            <span style={{ ...styles.directionTag, backgroundColor: finalResult.direction === "UP⏫" ? "#16a34a" : "#dc2626" }}>
-              {finalResult.direction === "UP⏫" ? "📈 CALL" : "📉 PUT"}
-            </span>
-            {activeRound === 2 && <span style={styles.mtgTag}>MTG</span>}
-          </div>
+          <span style={{ ...styles.directionTag, background: finalResult.direction === "UP⏫" ? "linear-gradient(135deg,#16a34a,#22c55e)" : "linear-gradient(135deg,#dc2626,#ef4444)" }}>
+            {finalResult.direction === "UP⏫" ? "📈 CALL" : "📉 PUT"}
+          </span>
         )}
       </div>
 
-      {phase === "waiting" && (
+      {(phase === "scanning" || phase === "finalizing") && (
         <>
-          <div style={styles.statusBadge}>🔍 বিশ্লেষণ চলছে... ({sampleCount} বার চেক করা হয়েছে)</div>
+          <div style={styles.scannerRing}>
+            <div style={styles.scannerCore} />
+          </div>
+          <p style={styles.scanText}>{phase === "finalizing" ? "🧩 𝗙𝗶𝗻𝗮𝗹𝗶𝘇𝗶𝗻𝗴 𝗦𝗶𝗴𝗻𝗮𝗹..." : SCAN_MESSAGES[scanMsgIndex]}</p>
           <div style={styles.timeGrid}>
             <TimeBox label="ENTRY TIME" value={fmtBDTime(entryEpoch)} />
             <TimeBox label="CLOSE TIME" value={fmtBDTime(closeEpoch)} />
           </div>
-          <div style={styles.countdownRow}>
-            <span style={styles.countdownLabel}>SIGNAL REVEALS IN</span>
-            <span style={styles.countdownValue}>{secondsUntilReveal}s</span>
-          </div>
+          {phase === "scanning" && (
+            <div style={styles.countdownRow}>
+              <span style={styles.countdownLabel}>SIGNAL REVEALS IN</span>
+              <span style={styles.countdownValue}>{secondsUntilReveal}s</span>
+            </div>
+          )}
         </>
       )}
 
-      {phase === "revealing" && <div style={styles.statusBadge}>🧠 চূড়ান্ত সিদ্ধান্ত নেওয়া হচ্ছে...</div>}
-
-      {phase !== "waiting" && phase !== "revealing" && finalResult && !finalResult.signal && (
+      {phase === "no-setup" && (
         <>
-          <div style={styles.noSignalIcon}>⏸️</div>
-          <p style={styles.noSignalTitle}>এখন কোনো সিগন্যাল নেই</p>
-          <p style={styles.noSignalReason}>{REASON_LABELS[finalResult.reason] || "এই মুহূর্তে নিরাপদ সেটআপ পাওয়া যায়নি"}</p>
+          <div style={styles.noSetupIcon}>📉</div>
+          <p style={styles.noSetupTitle}>এই মুহূর্তে মার্কেট অনুকূলে নেই</p>
+          <p style={styles.noSetupReason}>
+            শক্তিশালী সেটআপ না পাওয়া পর্যন্ত ট্রেড না নেওয়াই ভালো — একটু পর আবার Scan করুন
+          </p>
         </>
       )}
 
-      {finalResult?.signal && phase !== "waiting" && phase !== "revealing" && (
+      {phase !== "scanning" && phase !== "finalizing" && phase !== "no-setup" && finalResult?.signal && (
         <>
           <p style={styles.confidence}>কনফিডেন্স: {finalResult.confidencePct}%</p>
-          <p style={styles.sampleNote}>{finalResult.agreeCount}/{finalResult.sampleCount} বার বিশ্লেষণে একই দিক পাওয়া গেছে</p>
 
-          {phase === "entry-pending" && (
-            <div style={styles.statusBadge}>⏳ এন্ট্রি শুরু হবে {secondsUntilEntry}s পরে</div>
-          )}
-
-          {phase === "round1-active-or-checking" && now < closeEpoch && (
-            <div style={styles.statusBadge}>🟢 এখনই ট্রেড করুন — {secondsUntilR1Close}s বাকি</div>
-          )}
-          {phase === "round1-active-or-checking" && now >= closeEpoch && (
-            <div style={styles.statusBadge}>⏱️ ফলাফল যাচাই হচ্ছে...</div>
-          )}
-
-          {phase === "final-win" && <ResultBadge result="WIN" label="✅ WIN" />}
-
-          {phase === "round2-active-or-checking" && now < round2Close && (
-            <div style={styles.statusBadge}>🟡 MTG চলছে — {secondsUntilR2Close}s বাকি</div>
-          )}
-          {phase === "round2-active-or-checking" && now >= round2Close && (
-            <div style={styles.statusBadge}>⏱️ MTG ফলাফল যাচাই হচ্ছে...</div>
-          )}
-
-          {phase === "final" && round2Result === "WIN" && <ResultBadge result="WIN" label="✅ MTG WIN" />}
-          {phase === "final" && round2Result === "LOSS" && <ResultBadge result="LOSS" label="❌ LOSS" />}
+          <div style={styles.statusBadge}>
+            {phase === "entry-pending" && `⏳ এন্ট্রি শুরু হবে ${secondsUntilEntry}s পরে`}
+            {phase === "active" && `🟢 এখনই ট্রেড করুন — ${secondsUntilClose}s বাকি`}
+            {phase === "done" && `✅ ট্রেড সম্পন্ন`}
+          </div>
 
           <div style={styles.timeGrid}>
-            <TimeBox
-              label="ENTRY TIME"
-              value={fmtBDTime(activeRound === 2 ? round2Entry : entryEpoch)}
-            />
-            <TimeBox
-              label="CLOSE TIME"
-              value={fmtBDTime(activeRound === 2 ? round2Close : closeEpoch)}
-            />
+            <TimeBox label="ENTRY TIME" value={fmtBDTime(entryEpoch)} />
+            <TimeBox label="CLOSE TIME" value={fmtBDTime(closeEpoch)} />
           </div>
+
+          {phase !== "done" && (
+            <div style={styles.progressTrack}>
+              <div
+                style={{
+                  ...styles.progressFill,
+                  width: phase === "entry-pending" ? `${100 - (secondsUntilEntry / 20) * 100}%` : `${100 - (secondsUntilClose / 60) * 100}%`,
+                  background: phase === "active" ? "linear-gradient(90deg,#dc2626,#f97316)" : "linear-gradient(90deg,#3b82f6,#06b6d4)",
+                }}
+              />
+            </div>
+          )}
+
+          <div style={styles.mtgNote}>⚠️ 1 STEP MTG — লস হলে একই দিকে পরবর্তী ক্যান্ডেলে পুনরায় এন্ট্রি নিন</div>
 
           <div style={styles.detailBox}>
             <DetailRow label="RSI" value={finalResult.detail?.rsi} />
@@ -285,14 +214,6 @@ export default function SignalResult({ apiBaseUrl, pair, entryEpoch, revealEpoch
           <p style={styles.disclaimer}>⚠️ নিজ দায়িত্বে ট্রেড করুন, লস হলে ওভার-ট্রেড করবেন না</p>
         </>
       )}
-    </div>
-  );
-}
-
-function ResultBadge({ result, label }) {
-  return (
-    <div style={{ ...styles.resultBadge, backgroundColor: result === "WIN" ? "#16a34a" : "#dc2626" }}>
-      {label}
     </div>
   );
 }
@@ -317,28 +238,80 @@ function DetailRow({ label, value }) {
 }
 
 const styles = {
-  card: { width: "100%", backgroundColor: "#12151c", border: "1px solid #232838", borderRadius: "16px", padding: "18px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", fontFamily: "system-ui, sans-serif", marginTop: "14px" },
-  headerRow: { width: "100%", display: "flex", justifyContent: "space-between", alignItems: "flex-start" },
+  card: {
+    width: "100%",
+    boxSizing: "border-box",
+    maxWidth: "100%",
+    overflow: "hidden",
+    position: "relative",
+    background: "linear-gradient(180deg,#151922,#0f1218)",
+    border: "1px solid #262c3a",
+    borderRadius: "18px",
+    padding: "20px 16px 16px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "10px",
+    fontFamily: "system-ui, sans-serif",
+    marginTop: "14px",
+    boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+  },
+  glowBar: {
+    position: "absolute",
+    top: 0, left: 0, right: 0,
+    height: "3px",
+    background: "linear-gradient(90deg,#3b82f6,#06b6d4,#3b82f6)",
+    backgroundSize: "200% 100%",
+    animation: "signalGlow 2.5s linear infinite",
+  },
+  headerRow: { width: "100%", boxSizing: "border-box", display: "flex", justifyContent: "space-between", alignItems: "center" },
   symbol: { color: "#9aa3b2", fontSize: "13px" },
-  directionTag: { color: "#fff", fontSize: "12px", fontWeight: "700", padding: "4px 10px", borderRadius: "6px" },
-  mtgTag: { color: "#0d0f14", fontSize: "10px", fontWeight: "800", backgroundColor: "#f59e0b", padding: "2px 8px", borderRadius: "5px" },
-  statusBadge: { color: "#fff", fontSize: "13px", fontWeight: "600", backgroundColor: "#1e2330", padding: "6px 14px", borderRadius: "8px" },
-  resultBadge: { color: "#fff", fontSize: "16px", fontWeight: "800", padding: "8px 20px", borderRadius: "10px" },
-  timeGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", width: "100%" },
-  timeBox: { backgroundColor: "#1a1e28", borderRadius: "10px", padding: "10px", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" },
+  directionTag: { color: "#fff", fontSize: "12px", fontWeight: "700", padding: "5px 12px", borderRadius: "7px" },
+  scannerRing: {
+    width: "64px", height: "64px", borderRadius: "50%",
+    border: "3px solid #1e2330",
+    borderTopColor: "#3b82f6",
+    borderRightColor: "#06b6d4",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    animation: "signalSpin 1.1s linear infinite",
+  },
+  scannerCore: {
+    width: "26px", height: "26px", borderRadius: "50%",
+    background: "radial-gradient(circle,#3b82f6,transparent 70%)",
+  },
+  scanText: {
+    color: "#dbeafe", fontSize: "13px", fontWeight: "600", textAlign: "center",
+    margin: 0, minHeight: "18px", maxWidth: "100%", wordBreak: "break-word",
+  },
+  noSetupIcon: { fontSize: "30px" },
+  noSetupTitle: { color: "#fff", fontSize: "15px", fontWeight: "700", margin: 0, textAlign: "center" },
+  noSetupReason: {
+    color: "#9aa3b2", fontSize: "12.5px", textAlign: "center", margin: 0,
+    maxWidth: "100%", wordBreak: "break-word", lineHeight: 1.5,
+  },
+  statusBadge: {
+    color: "#fff", fontSize: "13px", fontWeight: "600",
+    backgroundColor: "#1e2330", padding: "6px 14px", borderRadius: "8px",
+    maxWidth: "100%", boxSizing: "border-box", textAlign: "center", wordBreak: "break-word",
+  },
+  timeGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", width: "100%", boxSizing: "border-box" },
+  timeBox: { backgroundColor: "#1a1e28", borderRadius: "10px", padding: "10px", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", minWidth: 0 },
   timeLabel: { color: "#6b7280", fontSize: "10px", letterSpacing: "0.5px" },
   timeValue: { color: "#fff", fontSize: "18px", fontWeight: "700" },
-  countdownRow: { display: "flex", justifyContent: "space-between", width: "100%", fontSize: "13px" },
+  countdownRow: { display: "flex", justifyContent: "space-between", width: "100%", fontSize: "13px", boxSizing: "border-box" },
   countdownLabel: { color: "#6b7280" },
   countdownValue: { color: "#fff", fontWeight: "700" },
   confidence: { color: "#fff", fontSize: "15px", margin: 0 },
-  sampleNote: { color: "#6b7280", fontSize: "11px", margin: 0 },
-  detailBox: { width: "100%", marginTop: "4px" },
+  mtgNote: {
+    width: "100%", boxSizing: "border-box", color: "#fbbf24", fontSize: "12px", fontWeight: "600",
+    backgroundColor: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)",
+    borderRadius: "8px", padding: "8px 10px", textAlign: "center", wordBreak: "break-word",
+  },
+  detailBox: { width: "100%", boxSizing: "border-box", marginTop: "4px" },
   detailRow: { display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #1e2330", fontSize: "13px" },
   detailLabel: { color: "#9aa3b2" },
   detailValue: { color: "#fff" },
-  noSignalIcon: { fontSize: "30px" },
-  noSignalTitle: { color: "#fff", fontSize: "15px", fontWeight: "600", margin: 0 },
-  noSignalReason: { color: "#9aa3b2", fontSize: "13px", textAlign: "center", margin: 0 },
-  disclaimer: { color: "#6b7280", fontSize: "11px", textAlign: "center", marginTop: "4px" },
+  disclaimer: { color: "#6b7280", fontSize: "11px", textAlign: "center", marginTop: "4px", maxWidth: "100%", wordBreak: "break-word" },
+  progressTrack: { width: "100%", boxSizing: "border-box", height: "5px", backgroundColor: "#1e2330", borderRadius: "3px", overflow: "hidden" },
+  progressFill: { height: "100%", transition: "width 1s linear" },
 };
