@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 const REASON_LABELS = {
   TIMEFRAME_MISMATCH: "১ মিনিট ও ৫ মিনিট টাইমফ্রেম ভিন্ন দিক দেখাচ্ছে — মার্কেট এখন অস্থির",
   SIDEWAYS_MARKET: "মার্কেট এখন সাইডওয়ে (দুর্বল ট্রেন্ড) — ট্রেড করার মতো সেটআপ নেই",
@@ -5,7 +7,28 @@ const REASON_LABELS = {
   NETWORK_ERROR: "সার্ভারে সংযোগ করা যায়নি, আবার চেষ্টা করুন",
 };
 
+function useCountdown(entryEpochMs, closeEpochMs) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (!entryEpochMs || !closeEpochMs) return { phase: "none" };
+
+  if (now < entryEpochMs) {
+    return { phase: "waiting", secondsLeft: Math.max(0, Math.ceil((entryEpochMs - now) / 1000)) };
+  }
+  if (now < closeEpochMs) {
+    return { phase: "active", secondsLeft: Math.max(0, Math.ceil((closeEpochMs - now) / 1000)) };
+  }
+  return { phase: "done" };
+}
+
 export default function SignalResult({ result, onClose }) {
+  const countdown = useCountdown(result?.entryEpochMs, result?.closeEpochMs);
+
   if (!result) return null;
 
   const isUp = result.direction === "UP⏫";
@@ -25,6 +48,43 @@ export default function SignalResult({ result, onClose }) {
               {isUp ? "📈 CALL (UP)" : "📉 PUT (DOWN)"}
             </div>
             <p style={styles.confidence}>কনফিডেন্স: {result.confidencePct}%</p>
+
+            {result.entryTime && (
+              <>
+                <div style={styles.statusBadge}>
+                  {countdown.phase === "waiting" && `⏳ এন্ট্রি শুরু হবে ${countdown.secondsLeft}s পরে`}
+                  {countdown.phase === "active" && `🟢 এখনই ট্রেড করুন — ${countdown.secondsLeft}s বাকি`}
+                  {countdown.phase === "done" && `✅ ট্রেড সম্পন্ন`}
+                </div>
+
+                <div style={styles.timeGrid}>
+                  <div style={styles.timeBox}>
+                    <span style={styles.timeLabel}>ENTRY TIME</span>
+                    <span style={styles.timeValue}>{result.entryTime}</span>
+                  </div>
+                  <div style={styles.timeBox}>
+                    <span style={styles.timeLabel}>CLOSE TIME</span>
+                    <span style={styles.timeValue}>{result.closeTime}</span>
+                  </div>
+                </div>
+
+                {countdown.phase !== "done" && (
+                  <div style={styles.progressTrack}>
+                    <div
+                      style={{
+                        ...styles.progressFill,
+                        width:
+                          countdown.phase === "waiting"
+                            ? "0%"
+                            : `${100 - (countdown.secondsLeft / 60) * 100}%`,
+                        backgroundColor: countdown.phase === "active" ? "#dc2626" : "#3b82f6",
+                      }}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+
             <div style={styles.detailBox}>
               <DetailRow label="RSI" value={result.detail?.rsi} />
               <DetailRow label="ADX (ট্রেন্ড শক্তি)" value={result.detail?.adx} />
@@ -96,6 +156,31 @@ const styles = {
     fontSize: "18px",
   },
   confidence: { color: "#fff", fontSize: "15px", margin: "4px 0" },
+  statusBadge: {
+    color: "#fff",
+    fontSize: "13px",
+    fontWeight: "600",
+    backgroundColor: "#1e2330",
+    padding: "6px 14px",
+    borderRadius: "8px",
+  },
+  timeGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "8px",
+    width: "100%",
+  },
+  timeBox: {
+    backgroundColor: "#1a1e28",
+    borderRadius: "10px",
+    padding: "10px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "4px",
+  },
+  timeLabel: { color: "#6b7280", fontSize: "10px", letterSpacing: "0.5px" },
+  timeValue: { color: "#fff", fontSize: "18px", fontWeight: "700" },
   detailBox: { width: "100%", marginTop: "8px" },
   detailRow: {
     display: "flex",
@@ -129,5 +214,16 @@ const styles = {
     border: "none",
     borderRadius: "10px",
     fontSize: "14px",
+  },
+  progressTrack: {
+    width: "100%",
+    height: "5px",
+    backgroundColor: "#1e2330",
+    borderRadius: "3px",
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    transition: "width 1s linear",
   },
 };
