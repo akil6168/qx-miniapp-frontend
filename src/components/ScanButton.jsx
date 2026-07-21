@@ -2,15 +2,15 @@ export default function ScanButton({ pair, onStart, disabled }) {
   function handleClick() {
     const now = Date.now();
     const nextMinute = Math.ceil(now / 60000) * 60000;
-    const entryEpoch = nextMinute + 60000; // এক ক্যান্ডেল স্কিপ করে পরের ক্যান্ডেলকে টার্গেট করা হয়
-    const revealEpoch = entryEpoch - 20000; // এন্ট্রির ২০ সেকেন্ড আগে সিগন্যাল প্রকাশ
+    const entryEpoch = nextMinute + 60000;
+    const revealEpoch = entryEpoch - 20000;
 
     onStart({ pair, entryEpoch, revealEpoch });
   }
 
   return (
     <button onClick={handleClick} disabled={disabled} style={{ ...styles.button, opacity: disabled ? 0.6 : 1 }}>
-      {disabled ? "সিগন্যাল চলমান..." : "🔍 Scan Market"}
+      {disabled ? "⏳ Signal In Progress" : "🔍 Scan Market"}
     </button>
   );
 }
