@@ -7,6 +7,7 @@ import { initTelegramApp } from "./telegram";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://your-bot.up.railway.app";
 const STORAGE_KEY = "qx_active_signal";
+const NOTICE_DURATION_MS = 8000;
 
 const AVAILABLE_PAIRS = [
   "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF",
@@ -21,9 +22,8 @@ function loadPersistedSignal() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    const closeEpoch = parsed.entryEpoch + 60000;
-    // ক্লোজ টাইমের পর কিছু বাফার সময় গেলে আর restore করা হবে না
-    if (Date.now() > closeEpoch + 5000) {
+    const staleCutoff = parsed.entryEpoch + 5 * 60 * 1000 + 65000;
+    if (Date.now() > staleCutoff) {
       localStorage.removeItem(STORAGE_KEY);
       return null;
     }
@@ -48,8 +48,10 @@ export default function App() {
 function MainScreen({ apiBaseUrl }) {
   const [pair, setPair] = useState("EUR/USD");
   const [activeSignal, setActiveSignal] = useState(() => loadPersistedSignal());
+  const [notice, setNotice] = useState(null);
 
   function handleStart(signal) {
+    setNotice(null);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(signal));
     setActiveSignal(signal);
   }
@@ -57,6 +59,13 @@ function MainScreen({ apiBaseUrl }) {
   function handleDone() {
     localStorage.removeItem(STORAGE_KEY);
     setActiveSignal(null);
+  }
+
+  function handleUnfavorable(message) {
+    localStorage.removeItem(STORAGE_KEY);
+    setActiveSignal(null); // ✅ Scan বাটন সাথে সাথে ফ্রি হয়ে যায়
+    setNotice(message);
+    setTimeout(() => setNotice(null), NOTICE_DURATION_MS);
   }
 
   return (
@@ -80,6 +89,25 @@ function MainScreen({ apiBaseUrl }) {
 
         <ScanButton pair={pair} disabled={!!activeSignal} onStart={handleStart} />
 
+        {notice && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: "12px 14px",
+              borderRadius: 10,
+              backgroundColor: "rgba(239,68,68,0.1)",
+              border: "1px solid rgba(239,68,68,0.35)",
+              color: "#fca5a5",
+              fontSize: 13,
+              textAlign: "center",
+              lineHeight: 1.5,
+              boxSizing: "border-box",
+            }}
+          >
+            {notice}
+          </div>
+        )}
+
         {activeSignal && (
           <SignalResult
             apiBaseUrl={apiBaseUrl}
@@ -87,6 +115,7 @@ function MainScreen({ apiBaseUrl }) {
             entryEpoch={activeSignal.entryEpoch}
             revealEpoch={activeSignal.revealEpoch}
             onDone={handleDone}
+            onUnfavorable={handleUnfavorable}
           />
         )}
       </div>
