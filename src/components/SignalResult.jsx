@@ -2,18 +2,27 @@ import { useEffect, useRef, useState } from "react";
 import { getInitData } from "../telegram";
 
 const SCAN_MESSAGES = [
-  "🧠 𝗗𝗘𝗘𝗣 𝗠𝗔𝗥𝗞𝗘𝗧 𝗔𝗡𝗔𝗟𝗬𝗦𝗜𝗦...",
-  "📊 𝗔𝗻𝗮𝗹𝘆𝘇𝗶𝗻𝗴 𝗣𝗿𝗶𝗰𝗲 𝗔𝗰𝘁𝗶𝗼𝗻...",
-  "📈 𝗖𝗵𝗲𝗰𝗸𝗶𝗻𝗴 𝗧𝗿𝗲𝗻𝗱 & 𝗠𝗼𝗺𝗲𝗻𝘁𝘂𝗺...",
-  "🔍 𝗘𝘃𝗮𝗹𝘂𝗮𝘁𝗶𝗻𝗴 𝗠𝗼𝗺𝗲𝗻𝘁𝘂𝗺 𝗜𝗻𝗱𝗶𝗰𝗮𝘁𝗼𝗿𝘀...",
-  "🌊 𝗦𝗰𝗮𝗻𝗻𝗶𝗻𝗴 𝗩𝗼𝗹𝗮𝘁𝗶𝗹𝗶𝘁𝘆 𝗣𝗮𝘁𝘁𝗲𝗿𝗻𝘀...",
-  "🎯 𝗖𝗿𝗼𝘀𝘀-𝗩𝗲𝗿𝗶𝗳𝘆𝗶𝗻𝗴 𝗠𝘂𝗹𝘁𝗶-𝗧𝗶𝗺𝗲𝗳𝗿𝗮𝗺𝗲 𝗗𝗮𝘁𝗮...",
-  "⚖️ 𝗖𝗮𝗹𝗰𝘂𝗹𝗮𝘁𝗶𝗻𝗴 𝗣𝗿𝗼𝗯𝗮𝗯𝗶𝗹𝗶𝘁𝘆 𝗦𝗰𝗼𝗿𝗲...",
+  "🧠 Initializing Deep Market Analysis...",
+  "📡 Fetching Live Price Feed...",
+  "📊 Analyzing Price Action...",
+  "📈 Checking Trend Direction & Momentum...",
+  "🔍 Evaluating Momentum Indicators (RSI)...",
+  "📉 Measuring Trend Strength (ADX)...",
+  "🌊 Scanning Volatility Patterns...",
+  "🕯️ Detecting Candlestick Patterns...",
+  "📐 Analyzing Bollinger Band Position...",
+  "🌀 Reviewing MACD Histogram...",
+  "🎯 Cross-Verifying 1M & 5M Timeframes...",
+  "🧮 Aggregating Indicator Consensus...",
+  "⚖️ Calculating Probability Score...",
+  "🔒 Validating Signal Confidence...",
+  "✅ Finalizing Analysis Result...",
 ];
 
 const SAMPLE_INTERVAL_MS = 15000;
 const SCAN_MESSAGE_ROTATE_MS = 1800;
-const AUTO_HIDE_MS = 8000;
+const NO_SETUP_HIDE_MS = 8000;
+const TRADE_DONE_HIDE_MS = 2000;
 
 function fmtBDTime(epochMs) {
   const d = new Date(epochMs + 6 * 60 * 60 * 1000);
@@ -70,15 +79,14 @@ export default function SignalResult({ apiBaseUrl, pair, entryEpoch, revealEpoch
     return () => clearInterval(t);
   }, []);
 
-  // স্ক্যানিং মেসেজ ঘুরিয়ে দেখানো
+  // মেসেজ একবার শেষ পর্যন্ত এগোবে, তারপর শেষ মেসেজেই থেমে থাকবে — লুপ করবে না
   useEffect(() => {
     const t = setInterval(() => {
-      setScanMsgIndex((i) => (i + 1) % SCAN_MESSAGES.length);
+      setScanMsgIndex((i) => Math.min(i + 1, SCAN_MESSAGES.length - 1));
     }, SCAN_MESSAGE_ROTATE_MS);
     return () => clearInterval(t);
   }, []);
 
-  // reveal পর্যন্ত বারবার sample নেওয়া
   useEffect(() => {
     let cancelled = false;
     async function pollLoop() {
@@ -106,17 +114,18 @@ export default function SignalResult({ apiBaseUrl, pair, entryEpoch, revealEpoch
     })();
   }, [now, revealEpoch, apiBaseUrl, pair]);
 
-  // ক্লোজ টাইম পার হওয়ার পর কার্ড বন্ধ (সিগন্যাল থাকলে), বা no-signal এর কিছুক্ষণ পর বন্ধ
   useEffect(() => {
     if (hideTimerStartedRef.current) return;
+
     if (finalResult?.signal && now >= closeEpoch) {
       hideTimerStartedRef.current = true;
-      const t = setTimeout(onDone, 3000);
+      const t = setTimeout(() => onDone(), TRADE_DONE_HIDE_MS);
       return () => clearTimeout(t);
     }
+
     if (finalResult && !finalResult.signal) {
       hideTimerStartedRef.current = true;
-      const t = setTimeout(onDone, AUTO_HIDE_MS);
+      const t = setTimeout(() => onDone(), NO_SETUP_HIDE_MS);
       return () => clearTimeout(t);
     }
   }, [finalResult, now, closeEpoch, onDone]);
@@ -151,7 +160,7 @@ export default function SignalResult({ apiBaseUrl, pair, entryEpoch, revealEpoch
           <div style={styles.scannerRing}>
             <div style={styles.scannerCore} />
           </div>
-          <p style={styles.scanText}>{phase === "finalizing" ? "🧩 𝗙𝗶𝗻𝗮𝗹𝗶𝘇𝗶𝗻𝗴 𝗦𝗶𝗴𝗻𝗮𝗹..." : SCAN_MESSAGES[scanMsgIndex]}</p>
+          <p style={styles.scanText}>{phase === "finalizing" ? "🧩 Finalizing Signal..." : SCAN_MESSAGES[scanMsgIndex]}</p>
           <div style={styles.timeGrid}>
             <TimeBox label="ENTRY TIME" value={fmtBDTime(entryEpoch)} />
             <TimeBox label="CLOSE TIME" value={fmtBDTime(closeEpoch)} />
@@ -168,21 +177,21 @@ export default function SignalResult({ apiBaseUrl, pair, entryEpoch, revealEpoch
       {phase === "no-setup" && (
         <>
           <div style={styles.noSetupIcon}>📉</div>
-          <p style={styles.noSetupTitle}>এই মুহূর্তে মার্কেট অনুকূলে নেই</p>
+          <p style={styles.noSetupTitle}>Market Conditions Not Favorable</p>
           <p style={styles.noSetupReason}>
-            শক্তিশালী সেটআপ না পাওয়া পর্যন্ত ট্রেড না নেওয়াই ভালো — একটু পর আবার Scan করুন
+            No high-probability setup found right now. Try scanning again shortly.
           </p>
         </>
       )}
 
       {phase !== "scanning" && phase !== "finalizing" && phase !== "no-setup" && finalResult?.signal && (
         <>
-          <p style={styles.confidence}>কনফিডেন্স: {finalResult.confidencePct}%</p>
+          <p style={styles.confidence}>Confidence: {finalResult.confidencePct}%</p>
 
           <div style={styles.statusBadge}>
-            {phase === "entry-pending" && `⏳ এন্ট্রি শুরু হবে ${secondsUntilEntry}s পরে`}
-            {phase === "active" && `🟢 এখনই ট্রেড করুন — ${secondsUntilClose}s বাকি`}
-            {phase === "done" && `✅ ট্রেড সম্পন্ন`}
+            {phase === "entry-pending" && `⏳ Entry starts in ${secondsUntilEntry}s`}
+            {phase === "active" && `🟢 Trade Now — ${secondsUntilClose}s remaining`}
+            {phase === "done" && `✅ Trade Complete`}
           </div>
 
           <div style={styles.timeGrid}>
@@ -202,16 +211,16 @@ export default function SignalResult({ apiBaseUrl, pair, entryEpoch, revealEpoch
             </div>
           )}
 
-          <div style={styles.mtgNote}>⚠️ 1 STEP MTG — লস হলে একই দিকে পরবর্তী ক্যান্ডেলে পুনরায় এন্ট্রি নিন</div>
+          <div style={styles.mtgNote}>⚠️ 1 STEP MTG — If this trade loses, re-enter the same direction on the next candle</div>
 
           <div style={styles.detailBox}>
             <DetailRow label="RSI" value={finalResult.detail?.rsi} />
-            <DetailRow label="ADX (ট্রেন্ড শক্তি)" value={finalResult.detail?.adx} />
-            <DetailRow label="প্যাটার্ন" value={finalResult.detail?.pattern} />
-            <DetailRow label="১মিন মিল" value={`${finalResult.detail?.m1Agreement}%`} />
-            <DetailRow label="৫মিন মিল" value={`${finalResult.detail?.m5Agreement}%`} />
+            <DetailRow label="ADX (Trend Strength)" value={finalResult.detail?.adx} />
+            <DetailRow label="Pattern" value={finalResult.detail?.pattern} />
+            <DetailRow label="1M Agreement" value={`${finalResult.detail?.m1Agreement}%`} />
+            <DetailRow label="5M Agreement" value={`${finalResult.detail?.m5Agreement}%`} />
           </div>
-          <p style={styles.disclaimer}>⚠️ নিজ দায়িত্বে ট্রেড করুন, লস হলে ওভার-ট্রেড করবেন না</p>
+          <p style={styles.disclaimer}>⚠️ Trade at your own risk. Do not over-trade after a loss.</p>
         </>
       )}
     </div>
