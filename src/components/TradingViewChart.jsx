@@ -28,7 +28,7 @@ export default function TradingViewChart({ pair }) {
       style: "1",
       locale: "en",
       backgroundColor: "rgba(13, 15, 20, 1)",
-      hide_top_toolbar: false,
+      hide_top_toolbar: true,
       hide_legend: false,
       allow_symbol_change: false,
       support_host: "https://www.tradingview.com",
